@@ -35,6 +35,7 @@ router.post("/", async (req, res) => {
   try {
     const { content, user_id, room, spoiler } = req.body as { content: string; user_id: string; room: string; spoiler?: boolean };
     if (!content || content.trim() === "") { res.status(400).json({ error: "content is required" }); return; }
+    if (content.trim().length > 80) { res.status(400).json({ error: "content must be 80 characters or fewer" }); return; }
     if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
     const result = await db.execute({ sql: "INSERT INTO posts (content, user_id, room, spoiler) VALUES (?, ?, ?, ?)", args: [content.trim(), user_id, room ?? "", spoiler ? 1 : 0] });

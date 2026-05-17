@@ -46,6 +46,7 @@ router.post("/posts/:id/comments", async (req, res) => {
     const { rows: postRows } = await db.execute({ sql: "SELECT 1 FROM posts WHERE id = ?", args: [postId] });
     if (!postRows[0]) { res.status(404).json({ error: "Post not found" }); return; }
     if (!text || text.trim() === "") { res.status(400).json({ error: "text is required" }); return; }
+    if (text.trim().length > 80) { res.status(400).json({ error: "text must be 80 characters or fewer" }); return; }
 
     const result = await db.execute({ sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [postId, text.trim(), user_id ?? "anonymous"] });
     const { rows } = await db.execute({ sql: "SELECT * FROM comments WHERE id = ?", args: [Number(result.lastInsertRowid)] });
@@ -133,6 +134,7 @@ router.post("/comments/:id/replies", async (req, res) => {
     const { rows: commentRows } = await db.execute({ sql: "SELECT 1 FROM comments WHERE id = ?", args: [commentId] });
     if (!commentRows[0]) { res.status(404).json({ error: "Comment not found" }); return; }
     if (!text || text.trim() === "") { res.status(400).json({ error: "text is required" }); return; }
+    if (text.trim().length > 80) { res.status(400).json({ error: "text must be 80 characters or fewer" }); return; }
 
     const result = await db.execute({ sql: "INSERT INTO comment_replies (comment_id, text, user_id) VALUES (?, ?, ?)", args: [commentId, text.trim(), user_id ?? "anonymous"] });
     const { rows } = await db.execute({ sql: "SELECT * FROM comment_replies WHERE id = ?", args: [Number(result.lastInsertRowid)] });
