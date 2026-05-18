@@ -74,6 +74,12 @@ export async function initDb() {
     )`,
   ], "write");
 
+  await db.batch([
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_post_likes ON post_likes (post_id, user_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_comment_likes ON comment_likes (comment_id, user_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_bucket_posts ON bucket_posts (bucket_id, post_id)",
+  ], "write");
+
   const { rows: countRows } = await db.execute("SELECT COUNT(*) as cnt FROM posts");
   const cnt = Number(countRows[0].cnt);
   
@@ -82,10 +88,12 @@ export async function initDb() {
     const p2 = await db.execute({ sql: "INSERT INTO posts (content, likes, views, user_id, room) VALUES (?, ?, ?, ?, ?)", args: ["鬼滅の刃3期の作画がやばい", 187, 467, "system", "最新話速報"] });
     const p3 = await db.execute({ sql: "INSERT INTO posts (content, likes, views, user_id, room) VALUES (?, ?, ?, ?, ?)", args: ["ルフィのギア5、原作とアニメどっちが好き？", 45, 300, "system", "キャラ考察"] });
 
-    // 型安全に lastInsertRowid を処理（取得できない場合のフォールバック付き）
-    const p1Id = p1.lastInsertRowid ? Number(p1.lastInsertRowid) : 1;
-    const p2Id = p2.lastInsertRowid ? Number(p2.lastInsertRowid) : 2;
-    const p3Id = p3.lastInsertRowid ? Number(p3.lastInsertRowid) : 3;
+    if (!p1.lastInsertRowid || !p2.lastInsertRowid || !p3.lastInsertRowid) {
+      throw new Error("Failed to insert seed posts");
+    }
+    const p1Id = Number(p1.lastInsertRowid);
+    const p2Id = Number(p2.lastInsertRowid);
+    const p3Id = Number(p3.lastInsertRowid);
 
     await db.batch([
       { sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [p1Id, "この考察最高すぎる", "system"] },

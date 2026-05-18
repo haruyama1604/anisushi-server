@@ -8,7 +8,7 @@ import bucketsRouter from "./routes/buckets";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: ["https://anisushi-client.vercel.app", "http://localhost:5173"] }));
 app.use(express.json());
 
 app.use("/posts", postsRouter);

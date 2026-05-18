@@ -4,10 +4,10 @@ import type { Comment, Reply } from "../types";
 
 const router = Router({ mergeParams: true });
 
-// コメント一覧（N+1修正: IN句で一括取得）
 router.get("/posts/:id/comments", async (req, res) => {
   try {
     const id = Number(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid post id" }); return; }
     const { user_id } = req.query as { user_id?: string };
 
     const { rows: postRows } = await db.execute({ sql: "SELECT 1 FROM posts WHERE id = ?", args: [id] });
@@ -37,10 +37,10 @@ router.get("/posts/:id/comments", async (req, res) => {
   }
 });
 
-// コメントを追加
 router.post("/posts/:id/comments", async (req, res) => {
   try {
     const postId = Number(req.params.id);
+    if (isNaN(postId)) { res.status(400).json({ error: "Invalid post id" }); return; }
     const { text, user_id } = req.body as { text: string; user_id: string };
 
     const { rows: postRows } = await db.execute({ sql: "SELECT 1 FROM posts WHERE id = ?", args: [postId] });
@@ -58,17 +58,18 @@ router.post("/posts/:id/comments", async (req, res) => {
   }
 });
 
-// コメントにいいね
 router.post("/comments/:id/like", async (req, res) => {
   try {
     const id = Number(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid comment id" }); return; }
     const { user_id } = req.body as { user_id: string };
+    if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
     const { rows: commentRows } = await db.execute({ sql: "SELECT * FROM comments WHERE id = ?", args: [id] });
     if (!commentRows[0]) { res.status(404).json({ error: "Comment not found" }); return; }
 
     const { rows: likeRows } = await db.execute({ sql: "SELECT 1 FROM comment_likes WHERE comment_id = ? AND user_id = ?", args: [id, user_id] });
-    if (likeRows[0]) { res.status(400).json({ error: "Already liked" }); return; }
+    if (likeRows[0]) { res.status(409).json({ error: "Already liked" }); return; }
 
     await db.batch([
       { sql: "INSERT INTO comment_likes (comment_id, user_id) VALUES (?, ?)", args: [id, user_id] },
@@ -84,11 +85,12 @@ router.post("/comments/:id/like", async (req, res) => {
   }
 });
 
-// コメントいいね取り消し
 router.delete("/comments/:id/like", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { user_id } = req.body as { user_id: string };
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid comment id" }); return; }
+    const { user_id } = req.query as { user_id: string };
+    if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
     const { rows: commentRows } = await db.execute({ sql: "SELECT * FROM comments WHERE id = ?", args: [id] });
     if (!commentRows[0]) { res.status(404).json({ error: "Comment not found" }); return; }
@@ -110,10 +112,10 @@ router.delete("/comments/:id/like", async (req, res) => {
   }
 });
 
-// 返信一覧
 router.get("/comments/:id/replies", async (req, res) => {
   try {
     const id = Number(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid comment id" }); return; }
     const { rows: commentRows } = await db.execute({ sql: "SELECT 1 FROM comments WHERE id = ?", args: [id] });
     if (!commentRows[0]) { res.status(404).json({ error: "Comment not found" }); return; }
 
@@ -125,10 +127,10 @@ router.get("/comments/:id/replies", async (req, res) => {
   }
 });
 
-// 返信を追加
 router.post("/comments/:id/replies", async (req, res) => {
   try {
     const commentId = Number(req.params.id);
+    if (isNaN(commentId)) { res.status(400).json({ error: "Invalid comment id" }); return; }
     const { text, user_id } = req.body as { text: string; user_id: string };
 
     const { rows: commentRows } = await db.execute({ sql: "SELECT 1 FROM comments WHERE id = ?", args: [commentId] });
@@ -145,11 +147,12 @@ router.post("/comments/:id/replies", async (req, res) => {
   }
 });
 
-// コメント削除
 router.delete("/comments/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { user_id } = req.body as { user_id: string };
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid comment id" }); return; }
+    const { user_id } = req.query as { user_id: string };
+    if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
     const { rows } = await db.execute({ sql: "SELECT * FROM comments WHERE id = ?", args: [id] });
     const comment = rows[0] as unknown as Comment | undefined;
@@ -168,11 +171,12 @@ router.delete("/comments/:id", async (req, res) => {
   }
 });
 
-// 返信削除
 router.delete("/replies/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { user_id } = req.body as { user_id: string };
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid reply id" }); return; }
+    const { user_id } = req.query as { user_id: string };
+    if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
     const { rows } = await db.execute({ sql: "SELECT * FROM comment_replies WHERE id = ?", args: [id] });
     const reply = rows[0] as unknown as Reply | undefined;
