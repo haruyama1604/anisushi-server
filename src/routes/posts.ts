@@ -50,6 +50,7 @@ router.delete("/:id", async (req, res) => {
     { sql: "DELETE FROM comment_replies WHERE comment_id IN (SELECT id FROM comments WHERE post_id = ?)", args: [id] },
     { sql: "DELETE FROM comments WHERE post_id = ?", args: [id] },
     { sql: "DELETE FROM post_likes WHERE post_id = ?", args: [id] },
+    { sql: "DELETE FROM post_views WHERE post_id = ?", args: [id] },
     { sql: "DELETE FROM bucket_posts WHERE post_id = ?", args: [id] },
     { sql: "DELETE FROM posts WHERE id = ?", args: [id] },
   ], "write");
@@ -60,10 +61,27 @@ router.delete("/:id", async (req, res) => {
 router.post("/:id/view", async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid post id" }); return; }
-  await db.execute({ sql: "UPDATE posts SET views = views + 1 WHERE id = ?", args: [id] });
+
+  const { user_id } = req.body as { user_id?: string };
+  if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
+
+  const { rows: postRows } = await db.execute({ sql: "SELECT 1 FROM posts WHERE id = ?", args: [id] });
+  if (!postRows[0]) { res.status(404).json({ error: "Post not found" }); return; }
+
+  const { rows: existing } = await db.execute({
+    sql: "SELECT 1 FROM post_views WHERE post_id = ? AND user_id = ?",
+    args: [id, user_id],
+  });
+
+  if (!existing[0]) {
+    await db.batch([
+      { sql: "INSERT INTO post_views (post_id, user_id) VALUES (?, ?)", args: [id, user_id] },
+      { sql: "UPDATE posts SET views = views + 1 WHERE id = ?", args: [id] },
+    ], "write");
+  }
+
   const { rows } = await db.execute({ sql: "SELECT views FROM posts WHERE id = ?", args: [id] });
-  if (!rows[0]) { res.status(404).json({ error: "Post not found" }); return; }
-  res.json({ views: Number(rows[0].views) });
+  res.json({ views: Number(rows[0].views), counted: !existing[0] });
 });
 
 router.post("/:id/like", async (req, res) => {

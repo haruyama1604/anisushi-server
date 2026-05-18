@@ -51,6 +51,13 @@ export async function initDb() {
       user_id TEXT    NOT NULL,
       FOREIGN KEY (post_id) REFERENCES posts(id)
     )`,
+    `CREATE TABLE IF NOT EXISTS post_views (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id    INTEGER NOT NULL,
+      user_id    TEXT    NOT NULL,
+      created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (post_id) REFERENCES posts(id)
+    )`,
     `CREATE TABLE IF NOT EXISTS buckets (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT NOT NULL,
@@ -76,6 +83,7 @@ export async function initDb() {
 
   await db.batch([
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_post_likes ON post_likes (post_id, user_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_post_views ON post_views (post_id, user_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_comment_likes ON comment_likes (comment_id, user_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_bucket_posts ON bucket_posts (bucket_id, post_id)",
   ], "write");
