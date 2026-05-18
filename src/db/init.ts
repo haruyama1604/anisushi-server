@@ -1,8 +1,13 @@
 import { createClient } from "@libsql/client";
 
+// 環境変数が設定されているかチェック
+if (!process.env.TURSO_URL || !process.env.TURSO_TOKEN) {
+  throw new Error("Missing TURSO_URL or TURSO_TOKEN in environment variables.");
+}
+
 export const db = createClient({
-  url: process.env.TURSO_URL!,
-  authToken: process.env.TURSO_TOKEN!,
+  url: process.env.TURSO_URL,
+  authToken: process.env.TURSO_TOKEN,
 });
 
 export function calcTier(likes: number, views: number): string {
@@ -69,20 +74,24 @@ export async function initDb() {
     )`,
   ], "write");
 
-  await db.execute({ sql: "UPDATE posts SET likes = 350, views = 490 WHERE user_id = 'system' AND content = 'エレンの決断は正しかったのか？'", args: [] });
-
   const { rows: countRows } = await db.execute("SELECT COUNT(*) as cnt FROM posts");
   const cnt = Number(countRows[0].cnt);
+  
   if (cnt === 0) {
     const p1 = await db.execute({ sql: "INSERT INTO posts (content, likes, views, user_id, room) VALUES (?, ?, ?, ?, ?)", args: ["エレンの決断は正しかったのか？", 350, 490, "system", "キャラ考察"] });
     const p2 = await db.execute({ sql: "INSERT INTO posts (content, likes, views, user_id, room) VALUES (?, ?, ?, ?, ?)", args: ["鬼滅の刃3期の作画がやばい", 187, 467, "system", "最新話速報"] });
     const p3 = await db.execute({ sql: "INSERT INTO posts (content, likes, views, user_id, room) VALUES (?, ?, ?, ?, ?)", args: ["ルフィのギア5、原作とアニメどっちが好き？", 45, 300, "system", "キャラ考察"] });
 
+    // 型安全に lastInsertRowid を処理（取得できない場合のフォールバック付き）
+    const p1Id = p1.lastInsertRowid ? Number(p1.lastInsertRowid) : 1;
+    const p2Id = p2.lastInsertRowid ? Number(p2.lastInsertRowid) : 2;
+    const p3Id = p3.lastInsertRowid ? Number(p3.lastInsertRowid) : 3;
+
     await db.batch([
-      { sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [Number(p1.lastInsertRowid), "この考察最高すぎる", "system"] },
-      { sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [Number(p1.lastInsertRowid), "アニメ見直した", "system"] },
-      { sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [Number(p2.lastInsertRowid), "ufotableは毎回やばい", "system"] },
-      { sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [Number(p3.lastInsertRowid), "アニメのギア5は笑いすぎた", "system"] },
+      { sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [p1Id, "この考察最高すぎる", "system"] },
+      { sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [p1Id, "アニメ見直した", "system"] },
+      { sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [p2Id, "ufotableは毎回やばい", "system"] },
+      { sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [p3Id, "アニメのギア5は笑いすぎた", "system"] },
     ], "write");
   }
 }
