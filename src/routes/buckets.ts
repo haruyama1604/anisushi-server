@@ -1,21 +1,23 @@
 import { Router } from "express";
 import { db, calcTier } from "../db/init";
+import { requireAuth } from "../middleware/auth";
 import type { Bucket, Post } from "../types";
 
 const router = Router();
 
-router.get("/", async (req, res) => {
-  const { user_id } = req.query as { user_id: string };
-  if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
+// 箱機能はすべてユーザー固有のため、全エンドポイントで認証必須
+router.use(requireAuth);
 
+router.get("/", async (req, res) => {
+  const user_id = req.user!.id;
   const { rows } = await db.execute({ sql: "SELECT * FROM buckets WHERE user_id = ? ORDER BY created_at DESC", args: [user_id] });
   res.json(rows);
 });
 
 router.post("/", async (req, res) => {
-  const { name, user_id } = req.body as { name: string; user_id: string };
+  const user_id = req.user!.id;
+  const { name } = req.body as { name: string };
   if (!name || name.trim() === "") { res.status(400).json({ error: "name is required" }); return; }
-  if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
   const result = await db.execute({ sql: "INSERT INTO buckets (name, user_id) VALUES (?, ?)", args: [name.trim(), user_id] });
   const { rows } = await db.execute({ sql: "SELECT * FROM buckets WHERE id = ?", args: [Number(result.lastInsertRowid)] });
@@ -23,11 +25,9 @@ router.post("/", async (req, res) => {
 });
 
 router.get("/:id/posts", async (req, res) => {
+  const user_id = req.user!.id;
   const bucketId = Number(req.params.id);
   if (isNaN(bucketId)) { res.status(400).json({ error: "Invalid bucket id" }); return; }
-
-  const { user_id } = req.query as { user_id: string };
-  if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
   const { rows: bucketRows } = await db.execute({ sql: "SELECT * FROM buckets WHERE id = ?", args: [bucketId] });
   const bucket = bucketRows[0] as unknown as Bucket | undefined;
@@ -40,11 +40,11 @@ router.get("/:id/posts", async (req, res) => {
 });
 
 router.post("/:id/posts", async (req, res) => {
+  const user_id = req.user!.id;
   const bucketId = Number(req.params.id);
   if (isNaN(bucketId)) { res.status(400).json({ error: "Invalid bucket id" }); return; }
 
-  const { post_id, user_id } = req.body as { post_id: number; user_id: string };
-  if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
+  const { post_id } = req.body as { post_id: number };
   if (!post_id || isNaN(Number(post_id))) { res.status(400).json({ error: "post_id is required" }); return; }
 
   const { rows: bucketRows } = await db.execute({ sql: "SELECT * FROM buckets WHERE id = ?", args: [bucketId] });
@@ -60,12 +60,10 @@ router.post("/:id/posts", async (req, res) => {
 });
 
 router.delete("/:id/posts/:postId", async (req, res) => {
+  const user_id = req.user!.id;
   const bucketId = Number(req.params.id);
   const postId   = Number(req.params.postId);
   if (isNaN(bucketId) || isNaN(postId)) { res.status(400).json({ error: "Invalid id" }); return; }
-
-  const { user_id } = req.query as { user_id: string };
-  if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
   const { rows: bucketRows } = await db.execute({ sql: "SELECT * FROM buckets WHERE id = ?", args: [bucketId] });
   const bucket = bucketRows[0] as unknown as Bucket | undefined;
@@ -78,11 +76,9 @@ router.delete("/:id/posts/:postId", async (req, res) => {
 });
 
 router.delete("/:id", async (req, res) => {
+  const user_id = req.user!.id;
   const bucketId = Number(req.params.id);
   if (isNaN(bucketId)) { res.status(400).json({ error: "Invalid bucket id" }); return; }
-
-  const { user_id } = req.query as { user_id: string };
-  if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
   const { rows: bucketRows } = await db.execute({ sql: "SELECT * FROM buckets WHERE id = ?", args: [bucketId] });
   const bucket = bucketRows[0] as unknown as Bucket | undefined;

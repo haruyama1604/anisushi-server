@@ -1,13 +1,14 @@
 import { Router } from "express";
 import { db } from "../db/init";
+import { requireAuth, optionalAuth } from "../middleware/auth";
 import type { Comment, Reply } from "../types";
 
 const router = Router({ mergeParams: true });
 
-router.get("/posts/:id/comments", async (req, res) => {
+router.get("/posts/:id/comments", optionalAuth, async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid post id" }); return; }
-  const { user_id } = req.query as { user_id?: string };
+  const user_id = req.user?.id;
 
   const { rows: postRows } = await db.execute({ sql: "SELECT 1 FROM posts WHERE id = ?", args: [id] });
   if (!postRows[0]) { res.status(404).json({ error: "Post not found" }); return; }
@@ -62,27 +63,27 @@ router.get("/posts/:id/comments", async (req, res) => {
   })));
 });
 
-router.post("/posts/:id/comments", async (req, res) => {
+router.post("/posts/:id/comments", requireAuth, async (req, res) => {
+  const user_id = req.user!.id;
   const postId = Number(req.params.id);
   if (isNaN(postId)) { res.status(400).json({ error: "Invalid post id" }); return; }
-  const { text, user_id } = req.body as { text: string; user_id: string };
+  const { text } = req.body as { text: string };
 
   const { rows: postRows } = await db.execute({ sql: "SELECT 1 FROM posts WHERE id = ?", args: [postId] });
   if (!postRows[0]) { res.status(404).json({ error: "Post not found" }); return; }
   if (!text || text.trim() === "") { res.status(400).json({ error: "text is required" }); return; }
   if (text.trim().length > 80) { res.status(400).json({ error: "text must be 80 characters or fewer" }); return; }
 
-  const result = await db.execute({ sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [postId, text.trim(), user_id ?? "anonymous"] });
+  const result = await db.execute({ sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [postId, text.trim(), user_id] });
   const { rows } = await db.execute({ sql: "SELECT * FROM comments WHERE id = ?", args: [Number(result.lastInsertRowid)] });
   const comment = rows[0] as unknown as Comment;
   res.status(201).json({ ...comment, likes: Number(comment.likes) });
 });
 
-router.post("/comments/:id/like", async (req, res) => {
+router.post("/comments/:id/like", requireAuth, async (req, res) => {
+  const user_id = req.user!.id;
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid comment id" }); return; }
-  const { user_id } = req.body as { user_id: string };
-  if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
   const { rows: commentRows } = await db.execute({ sql: "SELECT * FROM comments WHERE id = ?", args: [id] });
   if (!commentRows[0]) { res.status(404).json({ error: "Comment not found" }); return; }
@@ -100,11 +101,10 @@ router.post("/comments/:id/like", async (req, res) => {
   res.json({ id: updated.id, likes: Number(updated.likes) });
 });
 
-router.delete("/comments/:id/like", async (req, res) => {
+router.delete("/comments/:id/like", requireAuth, async (req, res) => {
+  const user_id = req.user!.id;
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid comment id" }); return; }
-  const { user_id } = req.query as { user_id: string };
-  if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
   const { rows: commentRows } = await db.execute({ sql: "SELECT * FROM comments WHERE id = ?", args: [id] });
   if (!commentRows[0]) { res.status(404).json({ error: "Comment not found" }); return; }
@@ -132,26 +132,26 @@ router.get("/comments/:id/replies", async (req, res) => {
   res.json(rows);
 });
 
-router.post("/comments/:id/replies", async (req, res) => {
+router.post("/comments/:id/replies", requireAuth, async (req, res) => {
+  const user_id = req.user!.id;
   const commentId = Number(req.params.id);
   if (isNaN(commentId)) { res.status(400).json({ error: "Invalid comment id" }); return; }
-  const { text, user_id } = req.body as { text: string; user_id: string };
+  const { text } = req.body as { text: string };
 
   const { rows: commentRows } = await db.execute({ sql: "SELECT 1 FROM comments WHERE id = ?", args: [commentId] });
   if (!commentRows[0]) { res.status(404).json({ error: "Comment not found" }); return; }
   if (!text || text.trim() === "") { res.status(400).json({ error: "text is required" }); return; }
   if (text.trim().length > 80) { res.status(400).json({ error: "text must be 80 characters or fewer" }); return; }
 
-  const result = await db.execute({ sql: "INSERT INTO comment_replies (comment_id, text, user_id) VALUES (?, ?, ?)", args: [commentId, text.trim(), user_id ?? "anonymous"] });
+  const result = await db.execute({ sql: "INSERT INTO comment_replies (comment_id, text, user_id) VALUES (?, ?, ?)", args: [commentId, text.trim(), user_id] });
   const { rows } = await db.execute({ sql: "SELECT * FROM comment_replies WHERE id = ?", args: [Number(result.lastInsertRowid)] });
   res.status(201).json(rows[0]);
 });
 
-router.delete("/comments/:id", async (req, res) => {
+router.delete("/comments/:id", requireAuth, async (req, res) => {
+  const user_id = req.user!.id;
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid comment id" }); return; }
-  const { user_id } = req.query as { user_id: string };
-  if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
   const { rows } = await db.execute({ sql: "SELECT * FROM comments WHERE id = ?", args: [id] });
   const comment = rows[0] as unknown as Comment | undefined;
@@ -166,11 +166,10 @@ router.delete("/comments/:id", async (req, res) => {
   res.json({ message: "deleted" });
 });
 
-router.delete("/replies/:id", async (req, res) => {
+router.delete("/replies/:id", requireAuth, async (req, res) => {
+  const user_id = req.user!.id;
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid reply id" }); return; }
-  const { user_id } = req.query as { user_id: string };
-  if (!user_id) { res.status(400).json({ error: "user_id is required" }); return; }
 
   const { rows } = await db.execute({ sql: "SELECT * FROM comment_replies WHERE id = ?", args: [id] });
   const reply = rows[0] as unknown as Reply | undefined;
