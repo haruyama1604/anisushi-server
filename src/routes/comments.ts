@@ -12,23 +12,53 @@ router.get("/posts/:id/comments", async (req, res) => {
   const { rows: postRows } = await db.execute({ sql: "SELECT 1 FROM posts WHERE id = ?", args: [id] });
   if (!postRows[0]) { res.status(404).json({ error: "Post not found" }); return; }
 
-  const { rows } = await db.execute({ sql: "SELECT * FROM comments WHERE post_id = ? ORDER BY created_at ASC", args: [id] });
-  const comments = rows as unknown as Comment[];
+  const { rows: commentRows } = await db.execute({
+    sql: "SELECT * FROM comments WHERE post_id = ? ORDER BY created_at ASC",
+    args: [id],
+  });
+  const comments = commentRows as unknown as Comment[];
 
-  let likedSet = new Set<number>();
-  if (user_id && comments.length > 0) {
-    const ids = comments.map((c) => Number(c.id));
-    const placeholders = ids.map(() => "?").join(", ");
-    const { rows: likedRows } = await db.execute({
-      sql: `SELECT comment_id FROM comment_likes WHERE comment_id IN (${placeholders}) AND user_id = ?`,
-      args: [...ids, user_id],
-    });
-    likedSet = new Set(likedRows.map((r) => Number(r.comment_id)));
+  if (comments.length === 0) {
+    res.json([]);
+    return;
   }
 
+  const commentIds = comments.map((c) => Number(c.id));
+  const placeholders = commentIds.map(() => "?").join(", ");
+
+  // 返信といいね済み判定を並列取得（N+1 を解消）
+  const [repliesResult, likedResult] = await Promise.all([
+    db.execute({
+      sql: `SELECT * FROM comment_replies WHERE comment_id IN (${placeholders}) ORDER BY created_at ASC`,
+      args: commentIds,
+    }),
+    user_id
+      ? db.execute({
+          sql: `SELECT comment_id FROM comment_likes WHERE comment_id IN (${placeholders}) AND user_id = ?`,
+          args: [...commentIds, user_id],
+        })
+      : Promise.resolve({ rows: [] as { comment_id: number }[] }),
+  ]);
+
+  // 返信を comment_id でグルーピング
+  const repliesByComment = new Map<number, Reply[]>();
+  for (const r of repliesResult.rows as unknown as Reply[]) {
+    const cid = Number(r.comment_id);
+    const list = repliesByComment.get(cid) ?? [];
+    list.push(r);
+    repliesByComment.set(cid, list);
+  }
+
+  const likedSet = new Set(likedResult.rows.map((r) => Number(r.comment_id)));
+
   res.json(comments.map((c) => ({
-    id: c.id, text: c.text, user_id: c.user_id, likes: Number(c.likes),
-    created_at: c.created_at, liked_by_user: likedSet.has(Number(c.id)),
+    id: c.id,
+    text: c.text,
+    user_id: c.user_id,
+    likes: Number(c.likes),
+    created_at: c.created_at,
+    liked_by_user: likedSet.has(Number(c.id)),
+    replies: repliesByComment.get(Number(c.id)) ?? [],
   })));
 });
 
