@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { db, calcTier } from "../db/init";
 import { requireAuth, optionalAuth } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { CreatePostBody } from "../validation/schemas";
 import type { Post } from "../types";
 
 const router = Router();
@@ -21,13 +23,11 @@ router.get("/", optionalAuth, async (_req, res) => {
   })));
 });
 
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requireAuth, validateBody(CreatePostBody), async (req, res) => {
   const user_id = req.user!.id;
-  const { content, room, spoiler } = req.body as { content: string; room: string; spoiler?: boolean };
-  if (!content || content.trim() === "") { res.status(400).json({ error: "content is required" }); return; }
-  if (content.trim().length > 80) { res.status(400).json({ error: "content must be 80 characters or fewer" }); return; }
+  const { content, room, spoiler } = req.body;
 
-  const result = await db.execute({ sql: "INSERT INTO posts (content, user_id, room, spoiler) VALUES (?, ?, ?, ?)", args: [content.trim(), user_id, room ?? "", spoiler ? 1 : 0] });
+  const result = await db.execute({ sql: "INSERT INTO posts (content, user_id, room, spoiler) VALUES (?, ?, ?, ?)", args: [content, user_id, room, spoiler ? 1 : 0] });
   const { rows } = await db.execute({ sql: "SELECT * FROM posts WHERE id = ?", args: [Number(result.lastInsertRowid)] });
   const post = rows[0] as unknown as Post;
   res.status(201).json({ ...post, likes: Number(post.likes), views: Number(post.views), spoiler: Number(post.spoiler), tier: calcTier(Number(post.likes), Number(post.views)) });

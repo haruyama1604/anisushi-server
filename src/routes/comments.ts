@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { db } from "../db/init";
 import { requireAuth, optionalAuth } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { CreateCommentBody, CreateReplyBody } from "../validation/schemas";
 import type { Comment, Reply } from "../types";
 
 const router = Router({ mergeParams: true });
@@ -63,18 +65,16 @@ router.get("/posts/:id/comments", optionalAuth, async (req, res) => {
   })));
 });
 
-router.post("/posts/:id/comments", requireAuth, async (req, res) => {
+router.post("/posts/:id/comments", requireAuth, validateBody(CreateCommentBody), async (req, res) => {
   const user_id = req.user!.id;
   const postId = Number(req.params.id);
   if (isNaN(postId)) { res.status(400).json({ error: "Invalid post id" }); return; }
-  const { text } = req.body as { text: string };
+  const { text } = req.body;
 
   const { rows: postRows } = await db.execute({ sql: "SELECT 1 FROM posts WHERE id = ?", args: [postId] });
   if (!postRows[0]) { res.status(404).json({ error: "Post not found" }); return; }
-  if (!text || text.trim() === "") { res.status(400).json({ error: "text is required" }); return; }
-  if (text.trim().length > 80) { res.status(400).json({ error: "text must be 80 characters or fewer" }); return; }
 
-  const result = await db.execute({ sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [postId, text.trim(), user_id] });
+  const result = await db.execute({ sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [postId, text, user_id] });
   const { rows } = await db.execute({ sql: "SELECT * FROM comments WHERE id = ?", args: [Number(result.lastInsertRowid)] });
   const comment = rows[0] as unknown as Comment;
   res.status(201).json({ ...comment, likes: Number(comment.likes) });
@@ -132,18 +132,16 @@ router.get("/comments/:id/replies", async (req, res) => {
   res.json(rows);
 });
 
-router.post("/comments/:id/replies", requireAuth, async (req, res) => {
+router.post("/comments/:id/replies", requireAuth, validateBody(CreateReplyBody), async (req, res) => {
   const user_id = req.user!.id;
   const commentId = Number(req.params.id);
   if (isNaN(commentId)) { res.status(400).json({ error: "Invalid comment id" }); return; }
-  const { text } = req.body as { text: string };
+  const { text } = req.body;
 
   const { rows: commentRows } = await db.execute({ sql: "SELECT 1 FROM comments WHERE id = ?", args: [commentId] });
   if (!commentRows[0]) { res.status(404).json({ error: "Comment not found" }); return; }
-  if (!text || text.trim() === "") { res.status(400).json({ error: "text is required" }); return; }
-  if (text.trim().length > 80) { res.status(400).json({ error: "text must be 80 characters or fewer" }); return; }
 
-  const result = await db.execute({ sql: "INSERT INTO comment_replies (comment_id, text, user_id) VALUES (?, ?, ?)", args: [commentId, text.trim(), user_id] });
+  const result = await db.execute({ sql: "INSERT INTO comment_replies (comment_id, text, user_id) VALUES (?, ?, ?)", args: [commentId, text, user_id] });
   const { rows } = await db.execute({ sql: "SELECT * FROM comment_replies WHERE id = ?", args: [Number(result.lastInsertRowid)] });
   res.status(201).json(rows[0]);
 });

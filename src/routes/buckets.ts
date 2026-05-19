@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { db, calcTier } from "../db/init";
 import { requireAuth } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { CreateBucketBody, AddPostToBucketBody } from "../validation/schemas";
 import type { Bucket, Post } from "../types";
 
 const router = Router();
@@ -14,12 +16,11 @@ router.get("/", async (req, res) => {
   res.json(rows);
 });
 
-router.post("/", async (req, res) => {
+router.post("/", validateBody(CreateBucketBody), async (req, res) => {
   const user_id = req.user!.id;
-  const { name } = req.body as { name: string };
-  if (!name || name.trim() === "") { res.status(400).json({ error: "name is required" }); return; }
+  const { name } = req.body;
 
-  const result = await db.execute({ sql: "INSERT INTO buckets (name, user_id) VALUES (?, ?)", args: [name.trim(), user_id] });
+  const result = await db.execute({ sql: "INSERT INTO buckets (name, user_id) VALUES (?, ?)", args: [name, user_id] });
   const { rows } = await db.execute({ sql: "SELECT * FROM buckets WHERE id = ?", args: [Number(result.lastInsertRowid)] });
   res.status(201).json(rows[0]);
 });
@@ -39,13 +40,12 @@ router.get("/:id/posts", async (req, res) => {
   res.json(posts.map((p) => ({ ...p, likes: Number(p.likes), views: Number(p.views), spoiler: Number(p.spoiler ?? 0), tier: calcTier(Number(p.likes), Number(p.views)) })));
 });
 
-router.post("/:id/posts", async (req, res) => {
+router.post("/:id/posts", validateBody(AddPostToBucketBody), async (req, res) => {
   const user_id = req.user!.id;
   const bucketId = Number(req.params.id);
   if (isNaN(bucketId)) { res.status(400).json({ error: "Invalid bucket id" }); return; }
 
-  const { post_id } = req.body as { post_id: number };
-  if (!post_id || isNaN(Number(post_id))) { res.status(400).json({ error: "post_id is required" }); return; }
+  const { post_id } = req.body;
 
   const { rows: bucketRows } = await db.execute({ sql: "SELECT * FROM buckets WHERE id = ?", args: [bucketId] });
   const bucket = bucketRows[0] as unknown as Bucket | undefined;
