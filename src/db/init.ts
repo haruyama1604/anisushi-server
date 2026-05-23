@@ -110,4 +110,31 @@ export async function initDb() {
       { sql: "INSERT INTO comments (post_id, text, user_id) VALUES (?, ?, ?)", args: [p3Id, "アニメのギア5は笑いすぎた", "system"] },
     ], "write");
   }
+
+  // 追加シード（運営投稿）。既に同じcontentがsystemユーザーで存在する場合はスキップ（冪等）。
+  // 既存3件の初期投稿に加え、各ルームに運営の話題提起を1件ずつ用意する。
+  const additionalSeeds: { content: string; room: string }[] = [
+    { content: "マキマに提供された「普通」の生活で思考停止するデンジ。彼にとって普通とは、他人に飼われるための首輪だった構造がエグい。", room: "キャラ考察" },
+    { content: "闇の悪魔戦以降、トラウマを共有して寄り添い合う二人が尊すぎる。恋愛を超越して完全に「家族」の領域に達してるよね。", room: "デンジ×パワー" },
+    { content: "アキが「デンジ達に死んでほしくない」と復讐を諦めた直後に、最悪の形（銃の魔人）で戦わせるタツキ先生の人の心のなさ（褒め言葉）。", room: "藤本タツキ論" },
+    { content: "暗殺者として育てられたレゼがデンジに勉強を教えるシーン。もし普通の女の子として生きられたら、というifの人生を追体験してそうで切ない。", room: "名シーン保管庫" },
+    { content: "人類の革新を叫ぶカリスマでありながら、本質はアムロへの対抗心とララァへのマザコンに縛られ続けた人間臭さが最高に魅力的。", room: "シャア考察" },
+    { content: "ジオン系のモノアイや駆動系が、戦後アナハイムを通じて連邦系MSに混ざり合っていく設定資料を眺めるだけで一晩明かせる。", room: "MS設定談義" },
+    { content: "単なる善悪二元論じゃなく、双方に大義と腐敗があるのが泥臭くて良い。オデッサ作戦前後の補給線の攻防とか設定が細かくて痺れる。", room: "一年戦争" },
+    { content: "「嘘はとびきりの愛（プロフェッショナル）」を貫き、最期に本物の「愛してる」を見つけたアイ。彼女の眩しさと孤独がこの作品のすべて。", room: "アイ伝説" },
+    { content: "純粋だったルビーの瞳に復讐の黒い星が宿った瞬間のゾクゾク感。お兄ちゃん（アクア）とは違うベクトルの狂気を感じて目が離せない。", room: "ルビー応援" },
+    { content: "漫画業界のシステムや舞台のギャラ事情、SNS炎上の生々しさなど、現代芸能界のリアルな闇の描き方が容赦なさすぎて毎回震える。", room: "芸能界リアル談" },
+  ];
+
+  for (const s of additionalSeeds) {
+    const { rows } = await db.execute({
+      sql: "SELECT 1 FROM posts WHERE content = ? AND user_id = 'system'",
+      args: [s.content],
+    });
+    if (rows[0]) continue;
+    await db.execute({
+      sql: "INSERT INTO posts (content, user_id, room) VALUES (?, 'system', ?)",
+      args: [s.content, s.room],
+    });
+  }
 }
