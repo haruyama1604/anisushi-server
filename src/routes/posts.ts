@@ -115,6 +115,12 @@ router.delete("/:id/like", requireAuth, async (req, res) => {
   await db.batch([
     { sql: "DELETE FROM post_likes WHERE post_id = ? AND user_id = ?", args: [id, user_id] },
     { sql: "UPDATE posts SET likes = MAX(0, likes - 1) WHERE id = ?", args: [id] },
+    // 「皿を返す（いいね取り消し）」=「コレクションから外す」と捉え、
+    // このユーザーが所有する箱からも該当の皿を自動で外す。
+    {
+      sql: "DELETE FROM bucket_posts WHERE post_id = ? AND bucket_id IN (SELECT id FROM buckets WHERE user_id = ?)",
+      args: [id, user_id],
+    },
   ], "write");
 
   const { rows } = await db.execute({ sql: "SELECT * FROM posts WHERE id = ?", args: [id] });
