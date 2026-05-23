@@ -27,7 +27,7 @@ export async function initDb() {
       views      INTEGER NOT NULL DEFAULT 0,
       user_id    TEXT    NOT NULL DEFAULT 'system',
       room       TEXT    NOT NULL DEFAULT '',
-      created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       spoiler    INTEGER NOT NULL DEFAULT 0
     )`,
     `CREATE TABLE IF NOT EXISTS comments (
@@ -36,7 +36,7 @@ export async function initDb() {
       text       TEXT    NOT NULL,
       user_id    TEXT    NOT NULL DEFAULT 'system',
       likes      INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       FOREIGN KEY (post_id) REFERENCES posts(id)
     )`,
     `CREATE TABLE IF NOT EXISTS comment_likes (
@@ -55,14 +55,14 @@ export async function initDb() {
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       post_id    INTEGER NOT NULL,
       user_id    TEXT    NOT NULL,
-      created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       FOREIGN KEY (post_id) REFERENCES posts(id)
     )`,
     `CREATE TABLE IF NOT EXISTS buckets (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT NOT NULL,
       user_id    TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     )`,
     `CREATE TABLE IF NOT EXISTS bucket_posts (
       id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +76,7 @@ export async function initDb() {
       comment_id INTEGER NOT NULL,
       text       TEXT    NOT NULL,
       user_id    TEXT    NOT NULL,
-      created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       FOREIGN KEY (comment_id) REFERENCES comments(id)
     )`,
   ], "write");
