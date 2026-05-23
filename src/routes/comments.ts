@@ -138,8 +138,17 @@ router.post("/comments/:id/replies", requireAuth, validateBody(CreateReplyBody),
   if (isNaN(commentId)) { res.status(400).json({ error: "Invalid comment id" }); return; }
   const { text } = req.body;
 
-  const { rows: commentRows } = await db.execute({ sql: "SELECT 1 FROM comments WHERE id = ?", args: [commentId] });
+  const { rows: commentRows } = await db.execute({ sql: "SELECT post_id FROM comments WHERE id = ?", args: [commentId] });
   if (!commentRows[0]) { res.status(404).json({ error: "Comment not found" }); return; }
+  const postId = Number(commentRows[0].post_id);
+
+  // 返信は、その投稿（皿）をいいね（取って）いるユーザーのみ可。
+  // フロントの UI ガードと同じ条件を、API 直叩きを想定してサーバー側でも強制する。
+  const { rows: likeRows } = await db.execute({
+    sql: "SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?",
+    args: [postId, user_id],
+  });
+  if (!likeRows[0]) { res.status(403).json({ error: "Like the post first to reply" }); return; }
 
   const result = await db.execute({ sql: "INSERT INTO comment_replies (comment_id, text, user_id) VALUES (?, ?, ?)", args: [commentId, text, user_id] });
   const { rows } = await db.execute({ sql: "SELECT * FROM comment_replies WHERE id = ?", args: [Number(result.lastInsertRowid)] });
