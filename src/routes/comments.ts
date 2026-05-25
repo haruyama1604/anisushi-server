@@ -165,11 +165,9 @@ router.delete("/comments/:id", requireAuth, async (req, res) => {
   if (!comment) { res.status(404).json({ error: "Comment not found" }); return; }
   if (comment.user_id !== user_id) { res.status(403).json({ error: "Permission denied" }); return; }
 
-  await db.batch([
-    { sql: "DELETE FROM comment_likes WHERE comment_id = ?", args: [id] },
-    { sql: "DELETE FROM comment_replies WHERE comment_id = ?", args: [id] },
-    { sql: "DELETE FROM comments WHERE id = ?", args: [id] },
-  ], "write");
+  // 関連テーブル (comment_likes / comment_replies) は
+  // ON DELETE CASCADE で DB 側が自動削除する。
+  await db.execute({ sql: "DELETE FROM comments WHERE id = ?", args: [id] });
   res.json({ message: "deleted" });
 });
 

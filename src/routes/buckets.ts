@@ -85,10 +85,8 @@ router.delete("/:id", async (req, res) => {
   if (!bucket) { res.status(404).json({ error: "Bucket not found" }); return; }
   if (bucket.user_id !== user_id) { res.status(403).json({ error: "Permission denied" }); return; }
 
-  await db.batch([
-    { sql: "DELETE FROM bucket_posts WHERE bucket_id = ?", args: [bucketId] },
-    { sql: "DELETE FROM buckets WHERE id = ?", args: [bucketId] },
-  ], "write");
+  // bucket_posts は ON DELETE CASCADE で DB 側が自動削除する。
+  await db.execute({ sql: "DELETE FROM buckets WHERE id = ?", args: [bucketId] });
   res.json({ message: "deleted" });
 });
 

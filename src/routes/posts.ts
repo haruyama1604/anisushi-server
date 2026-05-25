@@ -43,15 +43,9 @@ router.delete("/:id", requireAuth, async (req, res) => {
   if (!post) { res.status(404).json({ error: "Post not found" }); return; }
   if (post.user_id !== user_id) { res.status(403).json({ error: "Permission denied" }); return; }
 
-  await db.batch([
-    { sql: "DELETE FROM comment_likes WHERE comment_id IN (SELECT id FROM comments WHERE post_id = ?)", args: [id] },
-    { sql: "DELETE FROM comment_replies WHERE comment_id IN (SELECT id FROM comments WHERE post_id = ?)", args: [id] },
-    { sql: "DELETE FROM comments WHERE post_id = ?", args: [id] },
-    { sql: "DELETE FROM post_likes WHERE post_id = ?", args: [id] },
-    { sql: "DELETE FROM post_views WHERE post_id = ?", args: [id] },
-    { sql: "DELETE FROM bucket_posts WHERE post_id = ?", args: [id] },
-    { sql: "DELETE FROM posts WHERE id = ?", args: [id] },
-  ], "write");
+  // 関連テーブル (comments / comment_likes / comment_replies / post_likes /
+  // post_views / bucket_posts) は ON DELETE CASCADE で DB 側が自動削除する。
+  await db.execute({ sql: "DELETE FROM posts WHERE id = ?", args: [id] });
 
   res.json({ message: "deleted" });
 });

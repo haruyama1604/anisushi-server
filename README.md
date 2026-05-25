@@ -51,7 +51,7 @@ buckets          ──┘
 ```
 
 すべてのテーブルに `created_at TEXT NOT NULL DEFAULT (datetime('now'))` を持たせている。
-論理削除はせず、関連レコードはアプリ層でバッチ削除（将来 `ON DELETE CASCADE` への置換を検討中）。
+論理削除はせず、関連レコードは **`ON DELETE CASCADE` で DB 側に削除を委譲**している（後述「コード品質に関する取り組み」§6）。
 
 ## 認証フロー
 
@@ -172,6 +172,15 @@ likes/views 比で決まる tier を、悪意あるクライアントが操作�
 - `validateBody(schema)` ミドルウェアで1行適用
 - 副次効果：spoiler の型違反、負の post_id、room/bucket name 長さ未指定など、旧実装では通っていた不正値を捕捉
 
+### 6. ON DELETE CASCADE による関連削除の DB 委譲
+
+旧実装は `DELETE /posts/:id` の中で、関連する6テーブル（`comments` / `comment_likes` / `comment_replies` / `post_likes` / `post_views` / `bucket_posts`）を `db.batch` で順番に手動 DELETE していた。コメント・箱の削除も同様に手動 cascade。
+
+- すべての子テーブルの FK に `ON DELETE CASCADE` を付与し、削除は DB エンジンに委譲
+- route 側は `DELETE FROM posts WHERE id = ?` の1文だけになり、`posts.ts` の delete handler は **7文 → 1文**
+- アプリ層の手動 cascade だと「ある DELETE が走っている最中に別リクエストが孫テーブルへ INSERT する」race を許してしまうが、CASCADE は単一トランザクション内で実行されるため orphan が原理的に出ない
+- **マイグレーション戦略**：SQLite は `ALTER TABLE ... ADD CONSTRAINT` を持たないため、`PRAGMA foreign_keys = OFF` → 子テーブルを `*_new` で作り直し → `INSERT INTO ... SELECT` でデータ移行 → `DROP TABLE` → `ALTER TABLE ... RENAME` の標準手順を `executeMultiple` で 1 HTTP リクエスト = 1 コネクションに収める。`PRAGMA foreign_key_list` で既存スキーマを判定し、CASCADE が無い場合のみ migration を実行する idempotent 設計（`src/db/init.ts` の `migrateToCascade()`）
+
 ## 改善案・既知の課題
 
 時間が許せば次に取り組みたい項目。
@@ -179,7 +188,6 @@ likes/views 比で決まる tier を、悪意あるクライアントが操作�
 - **テストコード**：vitest + supertest で各 route の主要ケースをカバーしたい
 - **構造化ロガー**：pino を導入、`console.error` を置き換える
 - **レート制限**：express-rate-limit。投稿スパム対策
-- **ON DELETE CASCADE**：現在アプリ層で手動 cascade している部分を SQL の宣言に置き換え、race condition 耐性を上げる
 - **DB index**：`posts(created_at)`、`comments(post_id)` などクエリ頻度の高い列に追加
 - **メール+パスワード認証**：現状は匿名のみ。アカウント連携の余地を残している
 

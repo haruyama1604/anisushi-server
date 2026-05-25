@@ -18,6 +18,124 @@ export function calcTier(likes: number, views: number): string {
   return "normal";
 }
 
+// 既存DBに ON DELETE CASCADE が入っているかを判定する。
+// SQLite は ALTER で FK 制約を後から付けられないため、
+// 入っていなければ migrateToCascade() でテーブル再構築を行う。
+async function isCascadeMigrationNeeded(): Promise<boolean> {
+  const { rows } = await db.execute("PRAGMA foreign_key_list(comments)");
+  // 旧スキーマでは on_delete='NO ACTION'、新スキーマでは 'CASCADE'。
+  // テーブル自体が無い（初回起動）場合は rows.length === 0 だが、
+  // その後の CREATE TABLE で CASCADE 付きの新スキーマが作られるので migration は不要。
+  if (rows.length === 0) return false;
+  return !rows.some(
+    (r) => String(r.from) === "post_id" && String(r.on_delete) === "CASCADE"
+  );
+}
+
+// 既存DBのテーブルを ON DELETE CASCADE 付きで作り直す。
+// SQLite は ALTER TABLE で FK 制約を変更できない (公式の標準手順は
+// https://sqlite.org/lang_altertable.html#otheralter)。よって:
+//   1. *_new テーブルを CASCADE 付きで作る
+//   2. データを COPY する
+//   3. 旧テーブルを DROP
+//   4. *_new を旧名に RENAME
+// `PRAGMA foreign_keys = OFF` はトランザクション内では no-op なので、
+// PRAGMA + BEGIN/COMMIT + PRAGMA を 1 HTTP リクエスト = 1 コネクションで
+// 流すために `executeMultiple` を使う。
+async function migrateToCascade(): Promise<void> {
+  if (!(await isCascadeMigrationNeeded())) return;
+
+  console.log("[migration] Rebuilding tables with ON DELETE CASCADE...");
+
+  await db.executeMultiple(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+
+    CREATE TABLE comments_new (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id    INTEGER NOT NULL,
+      text       TEXT    NOT NULL,
+      user_id    TEXT    NOT NULL DEFAULT 'system',
+      likes      INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+    );
+    INSERT INTO comments_new (id, post_id, text, user_id, likes, created_at)
+      SELECT id, post_id, text, user_id, likes, created_at FROM comments;
+    DROP TABLE comments;
+    ALTER TABLE comments_new RENAME TO comments;
+
+    CREATE TABLE post_likes_new (
+      id      INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id INTEGER NOT NULL,
+      user_id TEXT    NOT NULL,
+      FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+    );
+    INSERT INTO post_likes_new (id, post_id, user_id)
+      SELECT id, post_id, user_id FROM post_likes;
+    DROP TABLE post_likes;
+    ALTER TABLE post_likes_new RENAME TO post_likes;
+
+    CREATE TABLE post_views_new (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id    INTEGER NOT NULL,
+      user_id    TEXT    NOT NULL,
+      created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+    );
+    INSERT INTO post_views_new (id, post_id, user_id, created_at)
+      SELECT id, post_id, user_id, created_at FROM post_views;
+    DROP TABLE post_views;
+    ALTER TABLE post_views_new RENAME TO post_views;
+
+    CREATE TABLE comment_likes_new (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      comment_id INTEGER NOT NULL,
+      user_id    TEXT    NOT NULL,
+      FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
+    );
+    INSERT INTO comment_likes_new (id, comment_id, user_id)
+      SELECT id, comment_id, user_id FROM comment_likes;
+    DROP TABLE comment_likes;
+    ALTER TABLE comment_likes_new RENAME TO comment_likes;
+
+    CREATE TABLE comment_replies_new (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      comment_id INTEGER NOT NULL,
+      text       TEXT    NOT NULL,
+      user_id    TEXT    NOT NULL,
+      created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
+    );
+    INSERT INTO comment_replies_new (id, comment_id, text, user_id, created_at)
+      SELECT id, comment_id, text, user_id, created_at FROM comment_replies;
+    DROP TABLE comment_replies;
+    ALTER TABLE comment_replies_new RENAME TO comment_replies;
+
+    CREATE TABLE bucket_posts_new (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      bucket_id INTEGER NOT NULL,
+      post_id   INTEGER NOT NULL,
+      FOREIGN KEY (bucket_id) REFERENCES buckets(id) ON DELETE CASCADE,
+      FOREIGN KEY (post_id)   REFERENCES posts(id)   ON DELETE CASCADE
+    );
+    INSERT INTO bucket_posts_new (id, bucket_id, post_id)
+      SELECT id, bucket_id, post_id FROM bucket_posts;
+    DROP TABLE bucket_posts;
+    ALTER TABLE bucket_posts_new RENAME TO bucket_posts;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_post_likes    ON post_likes    (post_id,    user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_post_views    ON post_views    (post_id,    user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_comment_likes ON comment_likes (comment_id, user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_bucket_posts  ON bucket_posts  (bucket_id,  post_id);
+
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+  `);
+
+  console.log("[migration] Done.");
+}
+
 export async function initDb() {
   await db.batch([
     `CREATE TABLE IF NOT EXISTS posts (
@@ -30,6 +148,12 @@ export async function initDb() {
       created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       spoiler    INTEGER NOT NULL DEFAULT 0
     )`,
+    `CREATE TABLE IF NOT EXISTS buckets (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      user_id    TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    )`,
     `CREATE TABLE IF NOT EXISTS comments (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       post_id    INTEGER NOT NULL,
@@ -37,39 +161,33 @@ export async function initDb() {
       user_id    TEXT    NOT NULL DEFAULT 'system',
       likes      INTEGER NOT NULL DEFAULT 0,
       created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-      FOREIGN KEY (post_id) REFERENCES posts(id)
+      FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
     )`,
     `CREATE TABLE IF NOT EXISTS comment_likes (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       comment_id INTEGER NOT NULL,
       user_id    TEXT    NOT NULL,
-      FOREIGN KEY (comment_id) REFERENCES comments(id)
+      FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
     )`,
     `CREATE TABLE IF NOT EXISTS post_likes (
       id      INTEGER PRIMARY KEY AUTOINCREMENT,
       post_id INTEGER NOT NULL,
       user_id TEXT    NOT NULL,
-      FOREIGN KEY (post_id) REFERENCES posts(id)
+      FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
     )`,
     `CREATE TABLE IF NOT EXISTS post_views (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       post_id    INTEGER NOT NULL,
       user_id    TEXT    NOT NULL,
       created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-      FOREIGN KEY (post_id) REFERENCES posts(id)
-    )`,
-    `CREATE TABLE IF NOT EXISTS buckets (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      name       TEXT NOT NULL,
-      user_id    TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
     )`,
     `CREATE TABLE IF NOT EXISTS bucket_posts (
       id        INTEGER PRIMARY KEY AUTOINCREMENT,
       bucket_id INTEGER NOT NULL,
       post_id   INTEGER NOT NULL,
-      FOREIGN KEY (bucket_id) REFERENCES buckets(id),
-      FOREIGN KEY (post_id)   REFERENCES posts(id)
+      FOREIGN KEY (bucket_id) REFERENCES buckets(id) ON DELETE CASCADE,
+      FOREIGN KEY (post_id)   REFERENCES posts(id)   ON DELETE CASCADE
     )`,
     `CREATE TABLE IF NOT EXISTS comment_replies (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,15 +195,18 @@ export async function initDb() {
       text       TEXT    NOT NULL,
       user_id    TEXT    NOT NULL,
       created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-      FOREIGN KEY (comment_id) REFERENCES comments(id)
+      FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
     )`,
   ], "write");
 
+  // 既存DB（CASCADE なしのスキーマ）が残っていれば作り直す。idempotent。
+  await migrateToCascade();
+
   await db.batch([
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_post_likes ON post_likes (post_id, user_id)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_post_views ON post_views (post_id, user_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_post_likes    ON post_likes    (post_id,    user_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_post_views    ON post_views    (post_id,    user_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_comment_likes ON comment_likes (comment_id, user_id)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_bucket_posts ON bucket_posts (bucket_id, post_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_bucket_posts  ON bucket_posts  (bucket_id,  post_id)",
   ], "write");
 
   const { rows: countRows } = await db.execute("SELECT COUNT(*) as cnt FROM posts");
