@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "../db/init";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
+import { writeLimiter } from "../middleware/rateLimit";
 import { CreateCommentBody, CreateReplyBody } from "../validation/schemas";
 import type { Comment, Reply } from "../types";
 
@@ -65,7 +66,7 @@ router.get("/posts/:id/comments", optionalAuth, async (req, res) => {
   })));
 });
 
-router.post("/posts/:id/comments", requireAuth, validateBody(CreateCommentBody), async (req, res) => {
+router.post("/posts/:id/comments", requireAuth, writeLimiter, validateBody(CreateCommentBody), async (req, res) => {
   const user_id = req.user!.id;
   const postId = Number(req.params.id);
   if (isNaN(postId)) { res.status(400).json({ error: "Invalid post id" }); return; }
@@ -80,7 +81,7 @@ router.post("/posts/:id/comments", requireAuth, validateBody(CreateCommentBody),
   res.status(201).json({ ...comment, likes: Number(comment.likes) });
 });
 
-router.post("/comments/:id/like", requireAuth, async (req, res) => {
+router.post("/comments/:id/like", requireAuth, writeLimiter, async (req, res) => {
   const user_id = req.user!.id;
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid comment id" }); return; }
@@ -132,7 +133,7 @@ router.get("/comments/:id/replies", async (req, res) => {
   res.json(rows);
 });
 
-router.post("/comments/:id/replies", requireAuth, validateBody(CreateReplyBody), async (req, res) => {
+router.post("/comments/:id/replies", requireAuth, writeLimiter, validateBody(CreateReplyBody), async (req, res) => {
   const user_id = req.user!.id;
   const commentId = Number(req.params.id);
   if (isNaN(commentId)) { res.status(400).json({ error: "Invalid comment id" }); return; }

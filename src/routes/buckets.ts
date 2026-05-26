@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, calcTier } from "../db/init";
 import { requireAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
+import { writeLimiter } from "../middleware/rateLimit";
 import { CreateBucketBody, AddPostToBucketBody } from "../validation/schemas";
 import type { Bucket, Post } from "../types";
 
@@ -16,7 +17,7 @@ router.get("/", async (req, res) => {
   res.json(rows);
 });
 
-router.post("/", validateBody(CreateBucketBody), async (req, res) => {
+router.post("/", writeLimiter, validateBody(CreateBucketBody), async (req, res) => {
   const user_id = req.user!.id;
   const { name } = req.body;
 
@@ -40,7 +41,7 @@ router.get("/:id/posts", async (req, res) => {
   res.json(posts.map((p) => ({ ...p, likes: Number(p.likes), views: Number(p.views), spoiler: Number(p.spoiler ?? 0), tier: calcTier(Number(p.likes), Number(p.views)) })));
 });
 
-router.post("/:id/posts", validateBody(AddPostToBucketBody), async (req, res) => {
+router.post("/:id/posts", writeLimiter, validateBody(AddPostToBucketBody), async (req, res) => {
   const user_id = req.user!.id;
   const bucketId = Number(req.params.id);
   if (isNaN(bucketId)) { res.status(400).json({ error: "Invalid bucket id" }); return; }

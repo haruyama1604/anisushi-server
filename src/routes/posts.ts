@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, calcTier } from "../db/init";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
+import { writeLimiter } from "../middleware/rateLimit";
 import { CreatePostBody } from "../validation/schemas";
 import type { Post } from "../types";
 
@@ -23,7 +24,7 @@ router.get("/", optionalAuth, async (_req, res) => {
   })));
 });
 
-router.post("/", requireAuth, validateBody(CreatePostBody), async (req, res) => {
+router.post("/", requireAuth, writeLimiter, validateBody(CreatePostBody), async (req, res) => {
   const user_id = req.user!.id;
   const { content, room, spoiler } = req.body;
 
@@ -50,7 +51,7 @@ router.delete("/:id", requireAuth, async (req, res) => {
   res.json({ message: "deleted" });
 });
 
-router.post("/:id/view", requireAuth, async (req, res) => {
+router.post("/:id/view", requireAuth, writeLimiter, async (req, res) => {
   const user_id = req.user!.id;
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid post id" }); return; }
@@ -74,7 +75,7 @@ router.post("/:id/view", requireAuth, async (req, res) => {
   res.json({ views: Number(rows[0].views), counted: !existing[0] });
 });
 
-router.post("/:id/like", requireAuth, async (req, res) => {
+router.post("/:id/like", requireAuth, writeLimiter, async (req, res) => {
   const user_id = req.user!.id;
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid post id" }); return; }
