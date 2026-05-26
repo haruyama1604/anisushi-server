@@ -1,4 +1,5 @@
 import { createClient } from "@libsql/client";
+import { logger } from "../logger";
 
 // 環境変数が設定されているかチェック
 if (!process.env.TURSO_URL || !process.env.TURSO_TOKEN) {
@@ -45,7 +46,7 @@ async function isCascadeMigrationNeeded(): Promise<boolean> {
 async function migrateToCascade(): Promise<void> {
   if (!(await isCascadeMigrationNeeded())) return;
 
-  console.log("[migration] Rebuilding tables with ON DELETE CASCADE...");
+  logger.info("[migration] Rebuilding tables with ON DELETE CASCADE...");
 
   await db.executeMultiple(`
     PRAGMA foreign_keys = OFF;
@@ -133,7 +134,7 @@ async function migrateToCascade(): Promise<void> {
     PRAGMA foreign_keys = ON;
   `);
 
-  console.log("[migration] Done.");
+  logger.info("[migration] Done.");
 }
 
 export async function initDb() {
@@ -207,6 +208,24 @@ export async function initDb() {
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_post_views    ON post_views    (post_id,    user_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_comment_likes ON comment_likes (comment_id, user_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_bucket_posts  ON bucket_posts  (bucket_id,  post_id)",
+  ], "write");
+
+  // パフォーマンス用 B-tree インデックス。
+  // 既存の `uq_*` UNIQUE 制約は単一行 lookup と重複防止に効くが、
+  // composite の **leading column 規則** によりリスト系 (WHERE + ORDER BY) が
+  // index seek にならないクエリが残っていた。下記5本でカバーする。
+  //
+  // 設計上のポイント:
+  //   - DESC ソートでも ASC index で backward scan できるので DESC 指定は不要
+  //   - 既存 `uq_post_likes (post_id, user_id)` は post_id 起点なので、
+  //     `GET /posts/liked` の `WHERE user_id = ?` には効かない → 別途張る
+  //   - composite は (フィルタ列, ソート列) の順で並べると WHERE + ORDER BY を同時に賄える
+  await db.batch([
+    "CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts          (created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_comments_post    ON comments       (post_id,    created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_replies_comment  ON comment_replies(comment_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_buckets_user     ON buckets        (user_id,    created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_post_likes_user  ON post_likes     (user_id)",
   ], "write");
 
   const { rows: countRows } = await db.execute("SELECT COUNT(*) as cnt FROM posts");
