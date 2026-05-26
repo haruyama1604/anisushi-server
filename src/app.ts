@@ -15,6 +15,11 @@ import { logger } from "./logger";
  */
 export function createApp() {
   const app = express();
+  // Express デフォルトの `X-Powered-By: Express` を消す。
+  // フレームワーク名を晒すと攻撃者に既知の Express CVE を狙い撃ちされる手掛かりを与えるため、
+  // 1行で削除しておく (最小コストの hardening)。
+  app.disable("x-powered-by");
+
   // Railway などのリバースプロキシ越しでも req.ip を正しく取れるようにする。
   // 1 hop だけ信用する設定。`true` だと X-Forwarded-For を詐称されると IP ベース
   // レート制限が無力化されるため、本番想定の安全値として 1 を選ぶ。

@@ -246,12 +246,19 @@ route ロジックも tier 計算もテストが無く、回帰検知ができ�
 [replies bulk fetch]         SEARCH comment_replies USING INDEX idx_replies_comment (comment_id=?)
 ```
 
+### 11. 軽量セキュリティハードニング
+
+- `app.disable("x-powered-by")` で Express デフォルトの `X-Powered-By: Express` レスポンスヘッダを削除。フレームワーク名を晒すと攻撃者に既知の Express CVE を狙い撃ちされる手掛かりを与えるため、1行で塞いだ
+- 回帰防止のため supertest で `expect(res.headers["x-powered-by"]).toBeUndefined()` を1本追加
+- `helmet` パッケージ (HSTS / X-Frame-Options / X-Content-Type-Options など 15 種の defensive ヘッダを一括設定) はまだ入れていない。本プロジェクトは API 専用で HTML を返さないため CSP 等は不要、CORS と JWT で最低限のサーフェスは塞いでいる。本格運用なら入れる候補として改善案に残す
+
 ## 改善案・既知の課題
 
 時間が許せば次に取り組みたい項目。
 
 - **メール+パスワード認証**：現状は匿名のみ。アカウント連携の余地を残している
 - **Redis ベースのレート制限ストア**：現状は `MemoryStore` (プロセス内) なので、Railway のインスタンスが複数になった瞬間に limit が分散カウントされる。スケールするなら `rate-limit-redis` への置換が必要
+- **helmet による包括的なセキュリティヘッダ設定**：HTTPS 越し配信時の HSTS など、API 専用 でも入れて損は無い
 
 ## 環境変数
 

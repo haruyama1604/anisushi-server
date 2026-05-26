@@ -40,6 +40,13 @@ describe("POST /auth/anonymous", () => {
   });
 });
 
+describe("security headers", () => {
+  it("X-Powered-By ヘッダはフレームワーク名を晒すので返さない", async () => {
+    const res = await request(app).get("/posts");
+    expect(res.headers["x-powered-by"]).toBeUndefined();
+  });
+});
+
 describe("posts", () => {
   it("GET /posts は 200 と配列を返す", async () => {
     const res = await request(app).get("/posts");
