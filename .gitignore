@@ -2,3 +2,6 @@ node_modules/
 dist/
 sushi.db
 .env
+
+# vitest が ts 設定を起動時に CJS にコンパイルした副産物
+vitest.config.js
