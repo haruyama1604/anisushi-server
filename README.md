@@ -2,9 +2,13 @@
 
 アニメ特化の回転寿司SNS「あにすし」のバックエンドAPI。
 
-## 本番URL
+## 関連リンク
 
-https://anisushi-server-production.up.railway.app/posts
+| 種別 | URL |
+|---|---|
+| **本番API** | https://anisushi-server-production.up.railway.app/posts |
+| 本番デモ（ブラウザで触れる） | https://anisushi-client.vercel.app |
+| クライアント（フロントエンド）リポジトリ | https://github.com/haruyama1604/anisushi-client |
 
 ## 技術スタック
 
