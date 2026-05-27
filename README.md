@@ -30,12 +30,12 @@ https://anisushi-server-production.up.railway.app/posts
 - それでも「クライアントが他人の user_id を詐称できる」という旧実装の脆弱性は塞ぐ必要があった
 - サーバが署名検証した JWT の `sub` クレームのみを `user_id` とすることで、なりすましを不可能にした
 
-### 2. tier ロジックは集計値ベース
+### 2. tier ロジックは likes の絶対値で都度算出
 
-各投稿の `tier`（金皿/銀皿/赤皿）はリクエスト時に `likes / views` で都度算出する。
+各投稿の `tier`（金皿/銀皿/赤皿）はリクエスト時に **likes だけ** から算出する（`likes>=200` gold / `>=80` silver / それ未満 normal）。
 
-- DB に保存しない理由：likes も views も変動するため、保存した瞬間に古くなる
-- views を1ユーザー1回に制限することで、tier 操作の悪用を防ぐ（後述）
+- DB に保存しない理由：likes は変動するため、保存した瞬間に古くなる
+- 旧実装は `likes/views` 比率方式だったが、views を tier に組み込むと「views 水増し攻撃」を生むため `post_views` 中間テーブル等の防御策が必要になっていた。**過剰設計に気付き views ごと撤去**（「コード品質に関する取り組み §2」参照）
 
 ### 3. N+1 を許容しない
 
@@ -46,7 +46,6 @@ https://anisushi-server-production.up.railway.app/posts
 
 ```
 posts (親)       ──┬── post_likes      (post_id, user_id) UNIQUE
-                   ├── post_views      (post_id, user_id) UNIQUE  ※tier操作防止
                    ├── comments      ──┬── comment_likes   (comment_id, user_id) UNIQUE
                    │                   └── comment_replies
                    └── bucket_posts ───┐
@@ -94,7 +93,6 @@ buckets (親)     ────────────────────�
 | GET | `/posts/liked` | required | 自分がいいねした投稿ID一覧 |
 | POST | `/posts/:id/like` | required | いいね |
 | DELETE | `/posts/:id/like` | required | いいね取り消し |
-| POST | `/posts/:id/view` | required | ビュー記録（1ユーザー1回） |
 
 ### コメント・返信
 
@@ -123,10 +121,9 @@ buckets (親)     ────────────────────�
 ## tier計算ロジック
 
 ```
-likes / views >= 0.7 → gold（金皿）
-likes / views >= 0.4 → silver（銀皿）
-それ以外           → normal（赤皿）
-views = 0          → normal
+likes >= 200 → gold（金皿）
+likes >= 80  → silver（銀皿）
+それ以外     → normal（赤皿、likes=0 含む）
 ```
 
 ## コード品質に関する取り組み
@@ -141,13 +138,20 @@ views = 0          → normal
 - `errorHandler` が本番モードでは詳細を隠し、開発時のみ `detail` を返す
 - 削減行数: -150行、エラー応答の情報漏洩リスクを解消
 
-### 2. ビューカウント水増し脆弱性の修正
+### 2. tier ロジックを比率方式から likes 絶対値方式へ再設計（views 撤去）
 
-旧実装は `POST /posts/:id/view` を誰でも無限に叩けた。
-likes/views 比で決まる tier を、悪意あるクライアントが操作できる状態だった。
+旧実装は tier を `likes / views` の比率で算出していた。これが以下の問題を生んでいた：
 
-- `post_views` 中間テーブル + `UNIQUE (post_id, user_id)` で「1ユーザー1ビュー」を強制
-- レスポンスに `counted` フラグを返し、クライアントが初回ビューか判定可能に
+- **自分で作った脆弱性を自分で塞いでいた**：`POST /posts/:id/view` が誰でも無限に叩けると tier が改竄できるため、`post_views` 中間テーブル + `UNIQUE` で「1ユーザー1ビュー」を強制する追加実装が必要だった
+- **直感に反する結果**：「1いいね/1ビュー = 100% = gold」「500いいね/2000ビュー = 25% = normal」のように、絶対人気と乖離した tier が出やすかった
+- **新規投稿の UX が悪い**：`views=0` ガード句のせいで、投稿直後は誰かが開くまで常に normal スタート
+
+最初は比率方式で設計しビュー水増し攻撃を中間テーブルで防いだが、**「views を tier から外せばこの防御策ごと不要になる」と気付き**、絶対値方式へ移行した：
+
+- `calcTier(likes)` で `>=200 gold / >=80 silver / それ未満 normal`
+- `post_views` テーブル / `views` 列 / `POST /:id/view` エンドポイント / クライアントの view fetch を **すべて削除**
+- 本番DBの掃除は `migrateRemoveViews()` で `DROP TABLE post_views` + `ALTER TABLE posts DROP COLUMN views` を idempotent に実行（次回 Railway デプロイで自動適用）
+- 結果：コード行数 −50 / API エンドポイント −1 / 中間テーブル −1 / 守るべき脆弱性 −1。**「最初に攻撃面を増やしてから守る」より「攻撃面を持たない設計に作り直す」方が筋が良かった**という学び
 
 ### 3. N+1 クエリの解消
 
@@ -176,7 +180,7 @@ likes/views 比で決まる tier を、悪意あるクライアントが操作�
 
 ### 6. ON DELETE CASCADE による関連削除の DB 委譲
 
-旧実装は `DELETE /posts/:id` の中で、関連6テーブル（`comments` / `comment_likes` / `comment_replies` / `post_likes` / `post_views` / `bucket_posts`）を `db.batch` で1件ずつ手動 DELETE していた。コメント・箱削除も同様に手動 cascade。
+旧実装は `DELETE /posts/:id` の中で、関連6テーブル（`comments` / `comment_likes` / `comment_replies` / `post_likes` / `post_views` / `bucket_posts`）を `db.batch` で1件ずつ手動 DELETE していた。コメント・箱削除も同様に手動 cascade（※ `post_views` はその後 §2 で撤去したため、現在は5テーブルが CASCADE 対象）。
 
 - 全ての子テーブル FK に `ON DELETE CASCADE` を付与し、関連削除を DB エンジンに委譲
 - route の delete handler は **`posts.ts` 7文→1文 / `comments.ts` 3文→1文 / `buckets.ts` 2文→1文** に集約
@@ -190,7 +194,7 @@ route ロジックも tier 計算もテストが無く、回帰検知ができ�
 - **構成**：[`vitest`](https://vitest.dev) を test runner、`supertest` で実 Express アプリ（`src/app.ts` の `createApp()`）を HTTP レベルで叩く。Express の組み立てを `createApp` ファクトリに切り出したことで、本番起動 (`src/index.ts`) と完全に同じ app をテストから流用できる
 - **DB 分離**：`vitest.config.ts` で `TURSO_URL=file::memory:?cache=shared` を注入し、本番 Turso には一切触らない in-memory SQLite で完結。`beforeEach` で `posts` と `buckets` を全削除すれば CASCADE で関連も消えるため、各テストは独立状態から開始できる
 - **カバー範囲**（[`src/__tests__/`](src/__tests__)）：
-  - `tier.test.ts` — `calcTier` の境界値（views=0、0.4 / 0.7 ちょうど、各帯）を網羅
+  - `tier.test.ts` — `calcTier(likes)` の境界値（80 / 200 ちょうど、各帯、likes=0 新規投稿は normal）を網羅
   - `api.test.ts` — `/auth/anonymous` / posts / comments / buckets の主要ハッピーパス + 認証/権限の負パス（401, 403）+ zod の負パス（400）+ UNIQUE 制約の負パス（409）+ **CASCADE が DB レベルで効いていることを直接 COUNT(*) で確認するテスト3本**
 - 全 22 テストが約 1.5 秒で完了。`npm test` で実行、`npm run test:watch` でファイル監視
 

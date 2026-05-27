@@ -18,7 +18,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  // posts と buckets を全消し → CASCADE で comments / *_likes / *_views / *_replies / bucket_posts も消える。
+  // posts と buckets を全消し → CASCADE で comments / *_likes / *_replies / bucket_posts も消える。
   // CASCADE の効きが本テストでも実証される副次効果あり。
   await db.execute("DELETE FROM posts");
   await db.execute("DELETE FROM buckets");
@@ -70,8 +70,8 @@ describe("posts", () => {
     expect(res.body.content).toBe("テスト投稿");
     expect(res.body.room).toBe("テストルーム");
     expect(res.body.likes).toBe(0);
-    expect(res.body.views).toBe(0);
-    expect(res.body.tier).toBe("normal"); // views=0 なので normal
+    expect(res.body.views).toBeUndefined(); // views 列は撤去済み
+    expect(res.body.tier).toBe("normal"); // likes=0 < 80 なので normal
   });
 
   it("POST /posts は content が 80 文字超で 400（zod バリデーション）", async () => {
@@ -104,27 +104,19 @@ describe("posts", () => {
     expect(r2.status).toBe(409);
   });
 
-  it("POST /posts/:id/view は 1回目 counted=true / 2回目 counted=false（tier 操作防止）", async () => {
+  it("POST /posts/:id/view は撤去済み（404）", async () => {
+    // views を tier 計算から外したため POST /:id/view エンドポイントごと削除。
+    // 旧クライアントがまだ叩いてきた場合に 404 になることを保証する。
     const { token } = await newAuth();
     const post = await request(app)
       .post("/posts")
       .set("Authorization", `Bearer ${token}`)
-      .send({ content: "ビューテスト" });
-    const postId = post.body.id;
+      .send({ content: "view endpoint removed" });
 
-    const r1 = await request(app)
-      .post(`/posts/${postId}/view`)
+    const res = await request(app)
+      .post(`/posts/${post.body.id}/view`)
       .set("Authorization", `Bearer ${token}`);
-    expect(r1.status).toBe(200);
-    expect(r1.body.counted).toBe(true);
-    expect(r1.body.views).toBe(1);
-
-    const r2 = await request(app)
-      .post(`/posts/${postId}/view`)
-      .set("Authorization", `Bearer ${token}`);
-    expect(r2.status).toBe(200);
-    expect(r2.body.counted).toBe(false);
-    expect(r2.body.views).toBe(1); // 増えない
+    expect(res.status).toBe(404);
   });
 
   it("DELETE /posts/:id は他人の投稿だと 403", async () => {
@@ -151,7 +143,6 @@ describe("posts", () => {
 
     // 関連レコードを生やす
     await request(app).post(`/posts/${postId}/like`).set("Authorization", `Bearer ${token}`);
-    await request(app).post(`/posts/${postId}/view`).set("Authorization", `Bearer ${token}`);
     const comment = await request(app)
       .post(`/posts/${postId}/comments`)
       .set("Authorization", `Bearer ${token}`)
@@ -169,10 +160,9 @@ describe("posts", () => {
       const { rows } = await db.execute({ sql, args: [postId] });
       return Number(rows[0].cnt);
     };
-    expect(await count("SELECT COUNT(*) as cnt FROM posts        WHERE id      = ?")).toBe(0);
-    expect(await count("SELECT COUNT(*) as cnt FROM post_likes   WHERE post_id = ?")).toBe(0);
-    expect(await count("SELECT COUNT(*) as cnt FROM post_views   WHERE post_id = ?")).toBe(0);
-    expect(await count("SELECT COUNT(*) as cnt FROM comments     WHERE post_id = ?")).toBe(0);
+    expect(await count("SELECT COUNT(*) as cnt FROM posts      WHERE id      = ?")).toBe(0);
+    expect(await count("SELECT COUNT(*) as cnt FROM post_likes WHERE post_id = ?")).toBe(0);
+    expect(await count("SELECT COUNT(*) as cnt FROM comments   WHERE post_id = ?")).toBe(0);
   });
 });
 

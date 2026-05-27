@@ -38,7 +38,7 @@ router.get("/:id/posts", async (req, res) => {
 
   const { rows } = await db.execute({ sql: "SELECT p.* FROM posts p INNER JOIN bucket_posts bp ON bp.post_id = p.id WHERE bp.bucket_id = ? ORDER BY bp.id DESC", args: [bucketId] });
   const posts = rows as unknown as Post[];
-  res.json(posts.map((p) => ({ ...p, likes: Number(p.likes), views: Number(p.views), spoiler: Number(p.spoiler ?? 0), tier: calcTier(Number(p.likes), Number(p.views)) })));
+  res.json(posts.map((p) => ({ ...p, likes: Number(p.likes), spoiler: Number(p.spoiler ?? 0), tier: calcTier(Number(p.likes)) })));
 });
 
 router.post("/:id/posts", writeLimiter, validateBody(AddPostToBucketBody), async (req, res) => {

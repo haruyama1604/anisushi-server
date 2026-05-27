@@ -18,9 +18,9 @@ router.get("/", optionalAuth, async (_req, res) => {
   const { rows } = await db.execute("SELECT * FROM posts ORDER BY created_at DESC");
   const posts = rows as unknown as Post[];
   res.json(posts.map((p) => ({
-    id: p.id, content: p.content, likes: Number(p.likes), views: Number(p.views),
+    id: p.id, content: p.content, likes: Number(p.likes),
     user_id: p.user_id, room: p.room, created_at: p.created_at,
-    spoiler: Number(p.spoiler ?? 0), tier: calcTier(Number(p.likes), Number(p.views)),
+    spoiler: Number(p.spoiler ?? 0), tier: calcTier(Number(p.likes)),
   })));
 });
 
@@ -31,7 +31,7 @@ router.post("/", requireAuth, writeLimiter, validateBody(CreatePostBody), async 
   const result = await db.execute({ sql: "INSERT INTO posts (content, user_id, room, spoiler) VALUES (?, ?, ?, ?)", args: [content, user_id, room, spoiler ? 1 : 0] });
   const { rows } = await db.execute({ sql: "SELECT * FROM posts WHERE id = ?", args: [Number(result.lastInsertRowid)] });
   const post = rows[0] as unknown as Post;
-  res.status(201).json({ ...post, likes: Number(post.likes), views: Number(post.views), spoiler: Number(post.spoiler), tier: calcTier(Number(post.likes), Number(post.views)) });
+  res.status(201).json({ ...post, likes: Number(post.likes), spoiler: Number(post.spoiler), tier: calcTier(Number(post.likes)) });
 });
 
 router.delete("/:id", requireAuth, async (req, res) => {
@@ -45,34 +45,10 @@ router.delete("/:id", requireAuth, async (req, res) => {
   if (post.user_id !== user_id) { res.status(403).json({ error: "Permission denied" }); return; }
 
   // 関連テーブル (comments / comment_likes / comment_replies / post_likes /
-  // post_views / bucket_posts) は ON DELETE CASCADE で DB 側が自動削除する。
+  // bucket_posts) は ON DELETE CASCADE で DB 側が自動削除する。
   await db.execute({ sql: "DELETE FROM posts WHERE id = ?", args: [id] });
 
   res.json({ message: "deleted" });
-});
-
-router.post("/:id/view", requireAuth, writeLimiter, async (req, res) => {
-  const user_id = req.user!.id;
-  const id = Number(req.params.id);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid post id" }); return; }
-
-  const { rows: postRows } = await db.execute({ sql: "SELECT 1 FROM posts WHERE id = ?", args: [id] });
-  if (!postRows[0]) { res.status(404).json({ error: "Post not found" }); return; }
-
-  const { rows: existing } = await db.execute({
-    sql: "SELECT 1 FROM post_views WHERE post_id = ? AND user_id = ?",
-    args: [id, user_id],
-  });
-
-  if (!existing[0]) {
-    await db.batch([
-      { sql: "INSERT INTO post_views (post_id, user_id) VALUES (?, ?)", args: [id, user_id] },
-      { sql: "UPDATE posts SET views = views + 1 WHERE id = ?", args: [id] },
-    ], "write");
-  }
-
-  const { rows } = await db.execute({ sql: "SELECT views FROM posts WHERE id = ?", args: [id] });
-  res.json({ views: Number(rows[0].views), counted: !existing[0] });
 });
 
 router.post("/:id/like", requireAuth, writeLimiter, async (req, res) => {
@@ -93,7 +69,7 @@ router.post("/:id/like", requireAuth, writeLimiter, async (req, res) => {
 
   const { rows } = await db.execute({ sql: "SELECT * FROM posts WHERE id = ?", args: [id] });
   const updated = rows[0] as unknown as Post;
-  res.json({ id: updated.id, likes: Number(updated.likes), tier: calcTier(Number(updated.likes), Number(updated.views)) });
+  res.json({ id: updated.id, likes: Number(updated.likes), tier: calcTier(Number(updated.likes)) });
 });
 
 router.delete("/:id/like", requireAuth, async (req, res) => {
@@ -120,7 +96,7 @@ router.delete("/:id/like", requireAuth, async (req, res) => {
 
   const { rows } = await db.execute({ sql: "SELECT * FROM posts WHERE id = ?", args: [id] });
   const updated = rows[0] as unknown as Post;
-  res.json({ id: updated.id, likes: Number(updated.likes), tier: calcTier(Number(updated.likes), Number(updated.views)) });
+  res.json({ id: updated.id, likes: Number(updated.likes), tier: calcTier(Number(updated.likes)) });
 });
 
 export default router;
