@@ -7,7 +7,7 @@
 | 種別 | URL |
 |---|---|
 | **本番API** | https://anisushi-server-production.up.railway.app/posts |
-| 本番デモ（ブラウザで触れる） | https://anisushi-client.vercel.app |
+| 本番デモ（ブラウザ） | https://anisushi-client.vercel.app |
 | クライアント（フロントエンド）リポジトリ | https://github.com/haruyama1604/anisushi-client |
 
 ## 技術スタック
