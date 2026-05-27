@@ -253,10 +253,15 @@ export async function initDb() {
 
   // 追加シード（運営投稿+コメント）。content/comment text と user_id='system' で
   // 既存判定して、無ければ INSERT する冪等処理。再デプロイで重複しない。
-  const additionalSeeds: { content: string; room: string; comments: string[] }[] = [
+  //
+  // likes/views は意図的に偏らせて、tier (gold/silver/normal) の見た目が
+  // フィードでバラけるように調整している（calcTier: 0.7+ gold / 0.4+ silver / その他 normal）。
+  // 最終的な分布: 4 gold / 4 silver / 2 normal。
+  const additionalSeeds: { content: string; room: string; likes: number; views: number; comments: string[] }[] = [
     {
       content: "マキマに提供された「普通」の生活で思考停止するデンジ。彼にとって普通とは、他人に飼われるための首輪だった構造がエグい。",
       room: "キャラ考察",
+      likes: 280, views: 340, // 82% → gold
       comments: [
         "ほんとこれ。普通の生活を手に入れたはずなのに、どんどん生気を失っていくデンジの描写がリアルでゾッとした。",
         "自由になったと思わせて、実はマキマさんの手のひらの上っていうのが絶望感ハンパないよね。",
@@ -265,6 +270,7 @@ export async function initDb() {
     {
       content: "闇の悪魔戦以降、トラウマを共有して寄り添い合う二人が尊すぎる。恋愛を超越して完全に「家族」の領域に達してるよね。",
       room: "デンジ×パワー",
+      likes: 412, views: 520, // 79% → gold
       comments: [
         "二人で一緒のベッドで寝るシーン、下心が一切消えてて本当に精神的な支え合ってて泣ける。",
         "恋愛関係にならないからこそ、お互いにとって唯一無二の掛け替えのない存在になったのが尊すぎる……！",
@@ -273,6 +279,7 @@ export async function initDb() {
     {
       content: "アキが「デンジ達に死んでほしくない」と復讐を諦めた直後に、最悪の形（銃の魔人）で戦わせるタツキ先生の人の心のなさ（褒め言葉）。",
       room: "藤本タツキ論",
+      likes: 156, views: 280, // 56% → silver
       comments: [
         "雪合戦の幻覚を見せながら戦わせるの、マジで鬼畜の所業すぎて初読のときトラウマになったわ。",
         "読者のメンタルをズタズタにしてくるけど、その最悪な展開が最高に面白いからタツキ先生信者はやめられない。",
@@ -281,6 +288,7 @@ export async function initDb() {
     {
       content: "暗殺者として育てられたレゼがデンジに勉強を教えるシーン。もし普通の女の子として生きられたら、というifの人生を追体験してそうで切ない。",
       room: "名シーン保管庫",
+      likes: 234, views: 310, // 75% → gold
       comments: [
         "夜のプールとか花火のシーンの、刹那の青春感が眩しすぎてその後の展開とのギャップに大号泣した。",
         "レゼが最後に「私も学校行ったことないの」って呟くの、普通の幸せを知らない二人が共鳴してて切なすぎる。",
@@ -289,6 +297,7 @@ export async function initDb() {
     {
       content: "人類の革新を叫ぶカリスマでありながら、本質はアムロへの対抗心とララァへのマザコンに縛られ続けた人間臭さが最高に魅力的。",
       room: "シャア考察",
+      likes: 89, views: 220, // 40% → silver (ぎりぎり)
       comments: [
         "逆シャアの最後のセリフとか、格好いいのに最高に情けなくて、だからこそ何十年経っても愛されるキャラなんだと思う。",
         "全人類を導く総帥の器と、プライドの高い拗らせたおじさんが同居してるのがシャアの味わい深いところ。",
@@ -297,6 +306,7 @@ export async function initDb() {
     {
       content: "ジオン系のモノアイや駆動系が、戦後アナハイムを通じて連邦系MSに混ざり合っていく設定資料を眺めるだけで一晩明かせる。",
       room: "MS設定談義",
+      likes: 47, views: 195, // 24% → normal
       comments: [
         "ハイザックの「連邦なのにモノアイ」っていう折衷案みたいなデザイン、過渡期の泥臭さがあって大好物です。",
         "アナハイムが裏で両方に武器流して技術吸収してるの、宇宙世紀の闇だしリアルな兵器産業って感じで最高。",
@@ -305,6 +315,7 @@ export async function initDb() {
     {
       content: "単なる善悪二元論じゃなく、双方に大義と腐敗があるのが泥臭くて良い。オデッサ作戦前後の補給線の攻防とか設定が細かくて痺れる。",
       room: "一年戦争",
+      likes: 178, views: 280, // 64% → silver
       comments: [
         "前線の兵士はどっちも必死なのに、上層部の政治的な思惑で戦況が引っ掻き回される描写がめちゃくちゃリアル。",
         "補給が途絶えたらどれだけ強いMSもただの鉄屑になるっていう、ミリタリー寄りのハードな設定が大人に刺さる。",
@@ -313,6 +324,7 @@ export async function initDb() {
     {
       content: "「嘘はとびきりの愛（プロフェッショナル）」を貫き、最期に本物の「愛してる」を見つけたアイ。彼女の眩しさと孤独がこの作品のすべて。",
       room: "アイ伝説",
+      likes: 367, views: 420, // 87% → gold
       comments: [
         "1巻であんなに綺麗に物語を爆発させて、未だに作品全体の呪縛であり光であり続けるアイのカリスマ性が狂おしい。",
         "最後に「この嘘はとびきりの愛」じゃなくて、本当の言葉として子どもたちに伝えられて救われたと思いたい……。",
@@ -321,6 +333,7 @@ export async function initDb() {
     {
       content: "純粋だったルビーの瞳に復讐の黒い星が宿った瞬間のゾクゾク感。お兄ちゃん（アクア）とは違うベクトルの狂気を感じて目が離せない。",
       room: "ルビー応援",
+      likes: 192, views: 380, // 51% → silver
       comments: [
         "あの天真爛漫だったルビーが、ママと同じ瞳（でも色は黒）になった時の鳥肌がヤバかった。復讐劇の始まりって感じ。",
         "アクアの冷徹な復讐劇とは違って、ルビーは感情がドロドロに燃え上がってる感じがして別の怖さがあるよね。",
@@ -329,6 +342,7 @@ export async function initDb() {
     {
       content: "漫画業界のシステムや舞台のギャラ事情、SNS炎上の生々しさなど、現代芸能界のリアルな闇の描き方が容赦なさすぎて毎回震える。",
       room: "芸能界リアル談",
+      likes: 58, views: 270, // 21% → normal
       comments: [
         "ネットニュースの切り取り方とかSNSの誹謗中傷の描写、生々しすぎてニュース見る目が変わるレベル。",
         "原作者と脚本家の板挟み問題とか、2.5次元の「役者同士のバチバチ感」とか、よくここまで取材して描けるなと感心する。",
@@ -347,8 +361,8 @@ export async function initDb() {
       postId = Number(existing[0].id);
     } else {
       const inserted = await db.execute({
-        sql: "INSERT INTO posts (content, user_id, room) VALUES (?, 'system', ?)",
-        args: [s.content, s.room],
+        sql: "INSERT INTO posts (content, likes, views, user_id, room) VALUES (?, ?, ?, 'system', ?)",
+        args: [s.content, s.likes, s.views, s.room],
       });
       postId = Number(inserted.lastInsertRowid);
     }
