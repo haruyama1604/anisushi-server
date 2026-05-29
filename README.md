@@ -117,6 +117,7 @@ buckets (親)     ────────────────────�
 |---|---|---|---|
 | GET | `/buckets` | required | 自分の箱一覧 |
 | POST | `/buckets` | required | 箱作成（name<=20字） |
+| PATCH | `/buckets/:id` | required | 箱の名前を変更（name<=20字、本人のみ） |
 | DELETE | `/buckets/:id` | required | 箱削除 |
 | GET | `/buckets/:id/posts` | required | 箱の中の投稿一覧 |
 | POST | `/buckets/:id/posts` | required | 箱に投稿を追加 |

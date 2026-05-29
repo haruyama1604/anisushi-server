@@ -280,6 +280,59 @@ describe("buckets", () => {
     expect(res.body.name).toBe("お気に入り");
   });
 
+  it("PATCH /buckets/:id は自分の箱の name を更新できる", async () => {
+    const { token } = await newAuth();
+    const created = await request(app)
+      .post("/buckets")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "旧名" });
+    const bucketId = created.body.id;
+
+    const res = await request(app)
+      .patch(`/buckets/${bucketId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "新名" });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe("新名");
+
+    // GET /buckets でも反映されていることを確認
+    const list = await request(app)
+      .get("/buckets")
+      .set("Authorization", `Bearer ${token}`);
+    const found = list.body.find((b: { id: number; name: string }) => b.id === bucketId);
+    expect(found?.name).toBe("新名");
+  });
+
+  it("PATCH /buckets/:id は他人の箱だと 403", async () => {
+    const { token: tokenA } = await newAuth();
+    const { token: tokenB } = await newAuth();
+    const created = await request(app)
+      .post("/buckets")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({ name: "A の箱" });
+
+    const res = await request(app)
+      .patch(`/buckets/${created.body.id}`)
+      .set("Authorization", `Bearer ${tokenB}`)
+      .send({ name: "横取り" });
+    expect(res.status).toBe(403);
+  });
+
+  it("PATCH /buckets/:id は 21 文字以上で 400 (zod バリデーション)", async () => {
+    const { token } = await newAuth();
+    const created = await request(app)
+      .post("/buckets")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "OK" });
+
+    const res = await request(app)
+      .patch(`/buckets/${created.body.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "あ".repeat(21) });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Validation failed");
+  });
+
   it("DELETE /buckets/:id で CASCADE が bucket_posts を削除", async () => {
     const { token } = await newAuth();
     const post = await request(app)

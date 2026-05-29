@@ -3,7 +3,7 @@ import { db, calcTier } from "../db/init";
 import { requireAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { writeLimiter } from "../middleware/rateLimit";
-import { CreateBucketBody, AddPostToBucketBody } from "../validation/schemas";
+import { CreateBucketBody, UpdateBucketBody, AddPostToBucketBody } from "../validation/schemas";
 import type { Bucket, Post } from "../types";
 
 const router = Router();
@@ -74,6 +74,22 @@ router.delete("/:id/posts/:postId", async (req, res) => {
   const result = await db.execute({ sql: "DELETE FROM bucket_posts WHERE bucket_id = ? AND post_id = ?", args: [bucketId, postId] });
   if (result.rowsAffected === 0) { res.status(404).json({ error: "Post not in bucket" }); return; }
   res.json({ message: "removed" });
+});
+
+router.patch("/:id", writeLimiter, validateBody(UpdateBucketBody), async (req, res) => {
+  const user_id = req.user!.id;
+  const bucketId = Number(req.params.id);
+  if (isNaN(bucketId)) { res.status(400).json({ error: "Invalid bucket id" }); return; }
+
+  const { rows: bucketRows } = await db.execute({ sql: "SELECT * FROM buckets WHERE id = ?", args: [bucketId] });
+  const bucket = bucketRows[0] as unknown as Bucket | undefined;
+  if (!bucket) { res.status(404).json({ error: "Bucket not found" }); return; }
+  if (bucket.user_id !== user_id) { res.status(403).json({ error: "Permission denied" }); return; }
+
+  const { name } = req.body;
+  await db.execute({ sql: "UPDATE buckets SET name = ? WHERE id = ?", args: [name, bucketId] });
+  const { rows } = await db.execute({ sql: "SELECT * FROM buckets WHERE id = ?", args: [bucketId] });
+  res.json(rows[0]);
 });
 
 router.delete("/:id", async (req, res) => {

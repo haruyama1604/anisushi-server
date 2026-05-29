@@ -25,6 +25,12 @@ export const CreateBucketBody = z.object({
   name: trimmedText(20, "name"),
 });
 
+// 箱の名前変更ボディ。CreateBucketBody と同じ制約 (1〜20字、trim 済み)。
+// 将来 name 以外のフィールドを追加可能にするため、別スキーマとして独立させる。
+export const UpdateBucketBody = z.object({
+  name: trimmedText(20, "name"),
+});
+
 export const AddPostToBucketBody = z.object({
   post_id: z.number().int().positive(),
 });
@@ -34,4 +40,5 @@ export type CreatePostBody     = z.infer<typeof CreatePostBody>;
 export type CreateCommentBody  = z.infer<typeof CreateCommentBody>;
 export type CreateReplyBody    = z.infer<typeof CreateReplyBody>;
 export type CreateBucketBody   = z.infer<typeof CreateBucketBody>;
+export type UpdateBucketBody   = z.infer<typeof UpdateBucketBody>;
 export type AddPostToBucketBody = z.infer<typeof AddPostToBucketBody>;
