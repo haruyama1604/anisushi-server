@@ -273,8 +273,11 @@ export async function initDb() {
   //
   // likes は意図的に偏らせて、tier (gold/silver/normal) の見た目がフィードで
   // バラけるように調整している（calcTier: likes>=200 gold / >=80 silver / その他 normal）。
-  // 最終的な分布: 4 gold / 4 silver / 2 normal（既存3件と合わせて 5 / 5 / 3）。
-  const additionalSeeds: { content: string; room: string; likes: number; comments: string[] }[] = [
+  // 既存10件（4 gold / 4 silver / 2 normal）+ ネタバレ2件（gold/silver 各1）。
+  //
+  // spoiler フラグは省略時 DB の DEFAULT 0 が効く。フロント側は post.spoiler === 1 の
+  // とき自動でブラー＋「ネタバレ」オーバーレイをかける（PlateCard.tsx 参照）。
+  const additionalSeeds: { content: string; room: string; likes: number; spoiler?: number; comments: string[] }[] = [
     {
       content: "マキマに提供された「普通」の生活で思考停止するデンジ。彼にとって普通とは、他人に飼われるための首輪だった構造がエグい。",
       room: "キャラ考察",
@@ -365,6 +368,28 @@ export async function initDb() {
         "原作者と脚本家の板挟み問題とか、2.5次元の「役者同士のバチバチ感」とか、よくここまで取材して描けるなと感心する。",
       ],
     },
+    // --- ここからネタバレ投稿（spoiler: 1）。フロント側で自動的にブラー＋
+    //     「ネタバレ」オーバーレイがかかる。
+    {
+      content: "パワーちゃんが血の悪魔として最期に「デンジ あいしてる」と告げて消えるシーン、第一部の到達点すぎる。マキマに殺される展開を初読のとき本当に受け止められなかった。",
+      room: "デンジ×パワー",
+      likes: 240, // gold
+      spoiler: 1,
+      comments: [
+        "初読時、パワーの首が落ちるコマで本当に呼吸が止まったわ。藤本タツキの容赦のなさが極まった瞬間だと思う。",
+        "あのラストのために第一部全部があったと言っても過言じゃない。二部でぜひ完全な形で復活させて欲しい。",
+      ],
+    },
+    {
+      content: "アクアが最後にルビーと心中する形で物語が終わるとは、序盤の頃は想像もできなかった。アイの呪いから子どもたちを「降ろす」ためのラストだと考えると、悲しいけど美しい結末だと思う。",
+      room: "アイ伝説",
+      likes: 158, // silver
+      spoiler: 1,
+      comments: [
+        "賛否は分かれてるけど、アクアが芸能界の闇に「踏み込んで終わる」ためにはあの結末しかなかったと思ってる。",
+        "ルビーが最後に「愛してる」と言えたの、アイが言えなかった言葉の継承で構造として完璧だった……。",
+      ],
+    },
   ];
 
   for (const s of additionalSeeds) {
@@ -378,8 +403,8 @@ export async function initDb() {
       postId = Number(existing[0].id);
     } else {
       const inserted = await db.execute({
-        sql: "INSERT INTO posts (content, likes, user_id, room) VALUES (?, ?, 'system', ?)",
-        args: [s.content, s.likes, s.room],
+        sql: "INSERT INTO posts (content, likes, spoiler, user_id, room) VALUES (?, ?, ?, 'system', ?)",
+        args: [s.content, s.likes, s.spoiler ?? 0, s.room],
       });
       postId = Number(inserted.lastInsertRowid);
     }
